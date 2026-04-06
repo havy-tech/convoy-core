@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Convoy\Concurrency;
+namespace Phalanx\Concurrency;
 
 use Closure;
-use Convoy\Exception\CancelledException;
+use Phalanx\Exception\CancelledException;
 use React\EventLoop\Loop;
 use React\EventLoop\TimerInterface;
 
@@ -26,6 +26,7 @@ final class CancellationToken
     {
     }
 
+    /** "none" = no cancellation source, not immutable. cancel() still works. */
     public static function none(): self
     {
         return new self();
@@ -57,6 +58,11 @@ final class CancellationToken
                 return $composite;
             }
 
+            /**
+             * Callback holds composite alive in source token's list until source fires.
+             *
+             * @see https://www.php.net/manual/en/class.weakreference.php
+             */
             $token->onCancel(static function () use ($composite): void {
                 $composite->cancel();
             });

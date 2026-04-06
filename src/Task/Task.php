@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Convoy\Task;
+namespace Phalanx\Task;
 
 use Closure;
-use Convoy\Scope;
 use InvalidArgumentException;
+use Phalanx\Scope;
 use ReflectionFunction;
 
 final readonly class Task implements Scopeable

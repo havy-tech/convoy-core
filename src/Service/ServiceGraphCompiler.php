@@ -2,16 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Convoy\Service;
+namespace Phalanx\Service;
 
-use Convoy\Exception\CyclicDependencyException;
-use Convoy\Exception\InvalidServiceConfigurationException;
-use Convoy\Middleware\ConditionalTransformationMiddleware;
+use Phalanx\Exception\CyclicDependencyException;
+use Phalanx\Exception\InvalidServiceConfigurationException;
+use Phalanx\Middleware\ConditionalTransformationMiddleware;
+use Phalanx\Support\ClosureInspector;
 
 final class ServiceGraphCompiler
 {
     /**
-     * @param list<\Convoy\Middleware\ServiceTransformationMiddleware> $middleware
+     * @param list<\Phalanx\Middleware\ServiceTransformationMiddleware> $middleware
      * @param array<string, mixed> $context
      */
     public function compile(
@@ -27,16 +28,32 @@ final class ServiceGraphCompiler
             $definitions[$type] = $this->applyMiddleware($def, $middleware);
         }
 
-        $this->validateDependencies($definitions, $catalog->aliases());
+        $aliases = $catalog->aliases();
+        $configTypes = $catalog->configs();
 
-        $this->detectCycles($definitions, $catalog->aliases());
+        foreach ($definitions as $type => $def) {
+            if ($def->dependencies === [] && $def->factory !== null) {
+                $inferred = array_filter(
+                    ClosureInspector::classParameters($def->factory),
+                    static fn(string $t): bool => isset($definitions[$aliases[$t] ?? $t]) || isset($configTypes[$t]),
+                );
 
-        $this->validateSingletonScoping($definitions, $catalog->aliases());
+                if ($inferred !== []) {
+                    $definitions[$type] = $def->withDependencies(...array_values($inferred));
+                }
+            }
+        }
+
+        $this->validateDependencies($definitions, $aliases, $configTypes);
+
+        $this->detectCycles($definitions, $aliases);
+
+        $this->validateSingletonScoping($definitions, $aliases);
 
         $services = [];
 
         foreach ($definitions as $type => $def) {
-            $depOrder = $this->resolveDependencyOrder($def, $definitions, $catalog->aliases());
+            $depOrder = $this->resolveDependencyOrder($def, $definitions, $aliases);
 
             $services[$type] = new CompiledService(
                 $def->type,
@@ -51,7 +68,7 @@ final class ServiceGraphCompiler
         return new ServiceGraph($services, $catalog->aliases(), $configs);
     }
 
-    /** @param list<\Convoy\Middleware\ServiceTransformationMiddleware> $middleware */
+    /** @param list<\Phalanx\Middleware\ServiceTransformationMiddleware> $middleware */
     private function applyMiddleware(ServiceDefinition $def, array $middleware): ServiceDefinition
     {
         foreach ($middleware as $mw) {
@@ -68,14 +85,15 @@ final class ServiceGraphCompiler
     /**
      * @param array<string, ServiceDefinition> $definitions
      * @param array<string, string> $aliases
+     * @param array<string, \Closure> $configs
      */
-    private function validateDependencies(array $definitions, array $aliases): void
+    private function validateDependencies(array $definitions, array $aliases, array $configs = []): void
     {
         foreach ($definitions as $type => $def) {
             foreach ($def->dependencies as $dep) {
                 $resolved = $aliases[$dep] ?? $dep;
 
-                if (!isset($definitions[$resolved])) {
+                if (!isset($definitions[$resolved]) && !isset($configs[$dep])) {
                     throw InvalidServiceConfigurationException::missingDependency($type, $dep);
                 }
             }
@@ -166,6 +184,11 @@ final class ServiceGraphCompiler
      * @param array<string, string> $aliases
      * @return list<string>
      */
+    /**
+     * @param array<string, ServiceDefinition> $definitions
+     * @param array<string, string> $aliases
+     * @return list<string>
+     */
     private function resolveDependencyOrder(
         ServiceDefinition $def,
         array $definitions,
@@ -174,29 +197,41 @@ final class ServiceGraphCompiler
         $order = [];
         $seen = [];
 
-        $resolve = static function (string $type) use (&$resolve, &$order, &$seen, $definitions, $aliases): void {
-            if (isset($seen[$type])) {
-                return;
-            }
-
-            $seen[$type] = true;
-            $resolved = $aliases[$type] ?? $type;
-            $depDef = $definitions[$resolved] ?? null;
-
-            if ($depDef !== null) {
-                foreach ($depDef->dependencies as $dep) {
-                    $resolve($dep);
-                }
-            }
-
-            $order[] = $type;
-        };
-
         foreach ($def->dependencies as $dep) {
-            $resolve($dep);
+            self::resolveOrder($dep, $definitions, $aliases, $seen, $order);
         }
 
         return $order;
+    }
+
+    /**
+     * @param array<string, ServiceDefinition> $definitions
+     * @param array<string, string> $aliases
+     * @param array<string, true> $seen
+     * @param list<string> $order
+     */
+    private static function resolveOrder(
+        string $type,
+        array $definitions,
+        array $aliases,
+        array &$seen,
+        array &$order,
+    ): void {
+        if (isset($seen[$type])) {
+            return;
+        }
+
+        $seen[$type] = true;
+        $resolved = $aliases[$type] ?? $type;
+        $depDef = $definitions[$resolved] ?? null;
+
+        if ($depDef !== null) {
+            foreach ($depDef->dependencies as $dep) {
+                self::resolveOrder($dep, $definitions, $aliases, $seen, $order);
+            }
+        }
+
+        $order[] = $type;
     }
 
     private function defaultFactory(string $type): \Closure

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Convoy\Handler;
+namespace Phalanx\Handler;
 
-use Convoy\ExecutionScope;
-use Convoy\Task\Executable;
-use Convoy\Task\Scopeable;
+use Phalanx\ExecutionScope;
+use Phalanx\Task\Executable;
+use Phalanx\Task\Scopeable;
 
 /**
  * A single link in the middleware chain.
@@ -25,6 +25,6 @@ final readonly class MiddlewareChainLink implements Executable
     {
         $scope = $scope->withAttribute('handler.next', $this->next);
 
-        return $scope->execute($this->middleware);
+        return ($this->middleware)($scope);
     }
 }

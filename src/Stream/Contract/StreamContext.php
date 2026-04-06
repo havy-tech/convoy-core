@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Convoy\Stream\Contract;
+namespace Phalanx\Stream\Contract;
 
 use Closure;
+use Phalanx\Suspendable;
 
-interface StreamContext
+interface StreamContext extends Suspendable
 {
     public function throwIfCancelled(): void;
 

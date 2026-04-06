@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Convoy\Tests\Smoke;
+namespace Phalanx\Tests\Smoke;
 
-use Convoy\Application;
-use Convoy\ExecutionScope;
-use Convoy\Scope;
-use Convoy\Service\ServiceBundle;
-use Convoy\Service\Services;
-use Convoy\Task\Scopeable;
-use Convoy\Task\Task;
-use Convoy\Tests\Support\AsyncTestCase;
+use Phalanx\Application;
+use Phalanx\ExecutionScope;
+use Phalanx\Scope;
+use Phalanx\Service\ServiceBundle;
+use Phalanx\Service\Services;
+use Phalanx\Task\Scopeable;
+use Phalanx\Task\Task;
+use Phalanx\Tests\Support\AsyncTestCase;
 use PHPUnit\Framework\Attributes\Test;
 
 final class FullApplicationLifecycleTest extends AsyncTestCase
@@ -85,10 +85,12 @@ final class FullApplicationLifecycleTest extends AsyncTestCase
             $result = $scope->execute(Task::of(static function (ExecutionScope $es) use (&$events) {
                 $events[] = 'task:start';
 
-                $es->service(DatabaseConnection::class);
+                $db = $es->service(DatabaseConnection::class);
+                $db->connected; // trigger lazy ghost initialization
                 $events[] = 'task:db_used';
 
-                $es->service(RequestContext::class);
+                $ctx = $es->service(RequestContext::class);
+                $ctx->id; // trigger lazy ghost initialization
                 $events[] = 'task:request_used';
 
                 return 'completed';
